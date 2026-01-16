@@ -25,39 +25,79 @@ db = client.athle_db
 # --- FONCTIONS DE RÉCUPÉRATION DE DONNÉES ---
 @st.cache_data
 def get_all_country_codes():
-    """Récupère la liste de tous les codes pays (NOC) ayant gagné au moins une médaille."""
-    codes = db.results.distinct("noc", {"medal": {"$in": ["Gold", "Silver", "Bronze"]}})
-    return sorted(codes)
+    """Récupère les codes pays uniques des deux bases."""
+    # Pays des JO
+    olympic_countries = db.results.distinct("noc", {"medal": {"$in": ["Gold", "Silver", "Bronze"]}})
+    # Pays des Mondiaux
+    world_countries = db.world_results.distinct("country", {"position": {"$in": [1, 2, 3, "1", "2", "3"]}})
+    
+    # Fusion et tri unique
+    combined = list(set(olympic_countries) | set(world_countries))
+    return sorted([c for c in combined if c])
 
 @st.cache_data
-def get_medals_by_discipline_for_country(country_noc):
-    """
-    Récupère le nombre de médailles par discipline pour un pays donné.
-    """
-    pipeline = [
+def get_combined_medals_by_discipline(country_noc):
+    # 1. Top 5 JO
+    pipe_oly = [
         {"$match": {"noc": country_noc, "medal": {"$in": ["Gold", "Silver", "Bronze"]}}},
-        {"$group": {"_id": "$event", "total_medailles": {"$sum": 1}}},
-        {"$sort": {"total_medailles": -1}},
-        {"$project": {"Discipline": "$_id", "Médailles": "$total_medailles", "_id": 0}},
-        {"$limit": 15} # On garde le top 15 pour la clarté
+        {"$group": {"_id": "$event", "count": {"$sum": 1}}},
+        {"$sort": {"count": -1}},
+        {"$limit": 5},
+        {"$project": {"Discipline": "$_id", "Médailles": "$count", "Source": "Olympics", "_id": 0}}
     ]
-    data = list(db.results.aggregate(pipeline))
-    return pd.DataFrame(data)
+    df_oly = pd.DataFrame(list(db.results.aggregate(pipe_oly)))
+
+    # 2. Top 5 Mondiaux
+    pipe_world = [
+        {"$match": {"country": country_noc, "position": {"$in": [1, 2, 3, "1", "2", "3"]}}},
+        {"$group": {"_id": "$event", "count": {"$sum": 1}}},
+        {"$sort": {"count": -1}},
+        {"$limit": 5},
+        {"$project": {"Discipline": "$_id", "Médailles": "$count", "Source": "World Championships", "_id": 0}}
+    ]
+    df_world = pd.DataFrame(list(db.world_results.aggregate(pipe_world)))
+
+    return pd.concat([df_oly, df_world], ignore_index=True)
 
 @st.cache_data
-def get_medals_over_time_for_country(country_noc):
-    """
-    Récupère l'évolution du nombre de médailles par année pour un pays donné.
-    """
-    pipeline = [
+def get_combined_timeline(country_noc):
+    # --- PARTIE OLYMPIQUE ---
+    pipe_oly = [
         {"$match": {"noc": country_noc, "medal": {"$in": ["Gold", "Silver", "Bronze"]}}},
-        {"$group": {"_id": "$year", "total_medailles": {"$sum": 1}}},
-        {"$sort": {"_id": 1}}, # Trier par année croissante
-        {"$project": {"Année": "$_id", "Médailles": "$total_medailles", "_id": 0}}
+        {"$group": {"_id": "$year", "total": {"$sum": 1}}},
+        {"$project": {"Année": "$_id", "Médailles": "$total", "Source": "Olympics", "_id": 0}}
     ]
-    data = list(db.results.aggregate(pipeline))
-    return pd.DataFrame(data)
+    df_oly = pd.DataFrame(list(db.results.aggregate(pipe_oly)))
 
+    # --- PARTIE CHAMPIONNATS DU MONDE ---
+    pipe_world = [
+        {"$match": {
+            "country": country_noc, 
+            "position": {"$in": [1, 2, 3, "1", "2", "3"]}
+        }},
+        {
+            "$lookup": {
+                "from": "championships_index",
+                "localField": "event_name",    # Nom dans world_results
+                "foreignField": "meeting_name", # Nom dans championships_index (vérifie bien !)
+                "as": "info"
+            }
+        },
+        {"$unwind": "$info"},
+        {"$group": {"_id": "$info.year", "total": {"$sum": 1}}},
+        {"$project": {"Année": "$_id", "Médailles": "$total", "Source": "World Championships", "_id": 0}}
+    ]
+    df_world = pd.DataFrame(list(db.world_results.aggregate(pipe_world)))
+
+    # Fusion des DataFrames
+    df_final = pd.concat([df_oly, df_world], ignore_index=True)
+    
+    if not df_final.empty:
+        df_final['Année'] = pd.to_numeric(df_final['Année'], errors='coerce')
+        # On s'assure que 'Source' est bien traité comme une catégorie pour Plotly
+        df_final = df_final.dropna(subset=['Année']).sort_values(["Année", "Source"])
+        
+    return df_final
 # --- INTERFACE UTILISATEUR (UI) ---
 
 st.title("🌍 Analyse Détaillée par Pays")
@@ -74,34 +114,34 @@ if selected_country:
     col1, col2 = st.columns(2)
 
     with col1:
-        st.subheader(f"Points Forts de {selected_country}")
-        df_disciplines = get_medals_by_discipline_for_country(selected_country)
+        st.subheader(f"🥇 Disciplines de prédilection")
+        df_disc = get_combined_medals_by_discipline(selected_country)
         
-        if not df_disciplines.empty:
-            # Le treemap est excellent pour voir les proportions
+        if not df_disc.empty:
+            # Treemap avec distinction de la source par couleur
             fig1 = px.treemap(
-                df_disciplines,
-                path=['Discipline'], 
+                df_disc,
+                path=['Source', 'Discipline'], 
                 values='Médailles',
-                title=f"Top 15 des disciplines les plus médaillées pour {selected_country}"
+                color='Source',
+                color_discrete_map={'Olympics': '#FFD700', 'World Championships': '#C0C0C0'},
+                title="Répartition par Source et Discipline"
             )
             st.plotly_chart(fig1, use_container_width=True)
-        else:
-            st.info(f"Aucune donnée de médaille par discipline trouvée pour {selected_country}.")
 
     with col2:
-        st.subheader(f"Performance Historique de {selected_country}")
-        df_timeline = get_medals_over_time_for_country(selected_country)
+        st.subheader(f"📈 Comparaison Historique")
+        df_time = get_combined_timeline(selected_country)
         
-        if not df_timeline.empty:
+        if not df_time.empty:
+            # Graphe linéaire avec deux lignes (une par source)
             fig2 = px.line(
-                df_timeline,
+                df_time,
                 x="Année",
                 y="Médailles",
+                color="Source",
                 markers=True,
-                title=f"Nombre de médailles remportées par édition"
+                title="Évolution des médailles : JO vs Mondiaux",
+                color_discrete_map={'Olympics': '#FF4B4B', 'World Championships': '#0068C9'}
             )
-            fig2.update_layout(xaxis_title="Année", yaxis_title="Nombre de médailles")
             st.plotly_chart(fig2, use_container_width=True)
-        else:
-            st.info(f"Aucune donnée historique de médailles trouvée pour {selected_country}.")

@@ -128,3 +128,66 @@ if athlete_names:
                 st.warning("Aucune donnée de performance disponible pour cet athlète.")
 else:
     st.error("La collection 'athletes' semble vide dans votre base MongoDB.")
+
+# --- SECTION CHAMPIONNATS DU MONDE (WORLD ATHLETICS) ---
+st.divider()
+st.title("🌍 Championnats du Monde (IAAF)")
+st.markdown("Résultats extraits de la base des Championnats du Monde d'Athlétisme.")
+
+@st.cache_data
+def get_world_championships_data(athlete_name):
+    """Récupère les résultats depuis la nouvelle collection world_results."""
+    # Note : On utilise 'athlete' car le script de conversion a renommé 'athelete' en 'athlete'
+    results = list(db.world_results.find({"athlete": athlete_name}).sort("year", 1))
+    return results
+
+world_results = get_world_championships_data(selected_athlete)
+
+if world_results:
+    df_world = pd.DataFrame(world_results)
+    
+    # Prétraitement des colonnes (Gestion des types)
+    # Dans les CSV mondiaux, 'position' est parfois une chaîne, on la convertit
+    df_world['position'] = pd.to_numeric(df_world['position'], errors='coerce')
+    df_world_clean = df_world.dropna(subset=['position']).sort_values('event_name') 
+
+    w_col1, w_col2 = st.columns([1, 2.5])
+
+    with w_col1:
+        st.subheader("📊 Stats Mondiales")
+        total_world = len(df_world)
+        # Calcul des médailles (Position 1, 2 ou 3)
+        w_gold = len(df_world[df_world['position'] == 1])
+        w_silver = len(df_world[df_world['position'] == 2])
+        w_bronze = len(df_world[df_world['position'] == 3])
+        
+        st.metric("Participations", total_world)
+        st.write(f"🥇 Titres : {w_gold}")
+        st.write(f"🥈 Argent : {w_silver}")
+        st.write(f"🥉 Bronze : {w_bronze}")
+
+    with w_col2:
+        # --- VISUALISATION : GRAPHE DE POSITION AUX MONDIAUX ---
+        # Note : On utilise 'event_name' pour l'axe X car l'année est dans l'index meeting
+        fig_world = px.bar(
+            df_world_clean,
+            x="event_name", 
+            y="position",
+            color="position",
+            title=f"Positions de {selected_athlete} aux Mondiaux par Meeting",
+            labels={"event_name": "Édition", "position": "Rang"},
+            template="plotly_white",
+            color_continuous_scale="Viridis_r"
+        )
+        fig_world.update_yaxes(autorange="reversed") # Le rang 1 reste le meilleur
+        st.plotly_chart(fig_world, use_container_width=True)
+
+        # Tableau secondaire
+        with st.expander("Voir le détail des résultats mondiaux"):
+            st.dataframe(
+                df_world[['event', 'event_name', 'position', 'mark', 'country']], 
+                use_container_width=True,
+                hide_index=True
+            )
+else:
+    st.info(f"ℹ️ {selected_athlete} n'a pas de résultats enregistrés dans la base des Championnats du Monde.")

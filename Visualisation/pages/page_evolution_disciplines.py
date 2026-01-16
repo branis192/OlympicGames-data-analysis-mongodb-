@@ -3,94 +3,67 @@ import pandas as pd
 from pymongo import MongoClient
 import plotly.express as px
 
-# --- CONFIGURATION DE LA PAGE ---
+# --- CONFIGURATION ---
 st.set_page_config(layout="wide")
 
-# --- CONNEXION À MONGODB ---
 @st.cache_resource
 def init_connection():
-    try:
-        client = MongoClient("mongodb://localhost:27017/", serverSelectionTimeoutMS=5000)
-        client.server_info()
-        return client
-    except Exception as e:
-        st.error(f"Erreur de connexion à MongoDB : {e}")
-        return None
+    client = MongoClient("mongodb://localhost:27017/")
+    return client
 
 client = init_connection()
-if not client:
-    st.stop()
-# --- Utilisation du nom de base de données correct ---
 db = client.athle_db
 
-# --- FONCTION DE RÉCUPÉRATION DES DONNÉES ---
+# --- FONCTION CORRIGÉE ---
 @st.cache_data
-def get_discipline_counts_over_time():
-    """
-    Récupère le nombre de disciplines par année et par type de compétition
-    depuis la collection 'editions'.
-    """
-    # Projection pour ne récupérer que les champs nécessaires
-    cursor = db.editions.find(
-        {},
+def get_clean_discipline_evolution():
+    # Agrégation pour éviter les erreurs de comptage
+    pipeline = [
         {
-            "_id": 0,
-            "year": 1,
-            "competition": 1,
-            "count_disciplines": 1
-        }
-    ).sort("year", 1) # Trier par année croissante
-
-    data = list(cursor)
-    
-    if not data:
-        return pd.DataFrame()
-        
+            "$project": {
+                "year": {"$toInt": "$year"},
+                "competition": 1,
+                "count_disciplines": {"$toInt": "$count_disciplines"}
+            }
+        },
+        {"$sort": {"year": 1}}
+    ]
+    data = list(db.editions.aggregate(pipeline))
     return pd.DataFrame(data)
 
-# --- INTERFACE UTILISATEUR (UI) ---
+st.title("📈 Analyse de l'Évolution des Disciplines")
 
-st.title("📈 Évolution du Nombre de Disciplines")
-st.markdown("""
-Cette visualisation montre comment le nombre de disciplines d'athlétisme a évolué au fil du temps.
-On peut observer la croissance des Jeux Olympiques et l'apparition des Championnats du Monde en 1983.
-""")
+df = get_clean_discipline_evolution()
 
-# Chargement des données
-df_evolution = get_discipline_counts_over_time()
-
-if not df_evolution.empty:
-    # Nettoyage simple des données pour garantir que 'year' est numérique
-    df_evolution['year'] = pd.to_numeric(df_evolution['year'])
+if not df.empty:
+    # FILTRE : Permettre à l'utilisateur de choisir la compétition pour éviter les cumuls faux
+    competitions = ["Toutes"] + sorted(df['competition'].unique().tolist())
+    selected_comp = st.selectbox("Filtrer par type de compétition :", competitions)
     
-    # Création du graphique en ligne avec Plotly Express
-    fig = px.line(
-        df_evolution,
+    df_plot = df if selected_comp == "Toutes" else df[df['competition'] == selected_comp]
+
+    # --- VISUALISATION PLUS MODERNE (Area Chart) ---
+    fig = px.area(
+        df_plot,
         x="year",
         y="count_disciplines",
-        color="competition",        # Crée une ligne par type de compétition
-        markers=True,               # Ajoute des points sur la ligne pour chaque édition
-        labels={
-            "year": "Année",
-            "count_disciplines": "Nombre de Disciplines",
-            "competition": "Type de Compétition"
-        },
-        title="Nombre de disciplines d'athlétisme par édition"
+        color="competition",
+        line_group="competition",
+        title="Croissance du programme d'athlétisme",
+        labels={"count_disciplines": "Nb Disciplines", "year": "Année"},
+        template="plotly_dark",
+        markers=True
     )
 
-    # Amélioration de l'apparence
-    fig.update_layout(
-        xaxis_title="Année de l'édition",
-        yaxis_title="Nombre de disciplines",
-        legend_title_text='Compétition'
-    )
-    
-    # Affichage du graphique dans Streamlit
+    fig.update_layout(hovermode="x unified")
     st.plotly_chart(fig, use_container_width=True)
 
-    # Afficher le tableau de données en dessous pour consultation
-    with st.expander("Voir les données du tableau"):
-        st.dataframe(df_evolution.sort_values("year", ascending=False), use_container_width=True)
-
-else:
-    st.warning("Aucune donnée sur les éditions n'a pu être chargée.")
+    # --- ANALYSE DES CHIFFRES ---
+    col1, col2 = st.columns(2)
+    with col1:
+        latest_year = df_plot['year'].max()
+        latest_count = df_plot[df_plot['year'] == latest_year]['count_disciplines'].sum()
+        st.metric(f"Total Disciplines en {latest_year}", int(latest_count))
+    
+    with col2:
+        st.info("💡 Si le chiffre paraît élevé, vérifiez si votre base ne compte pas séparément les épreuves paralympiques ou les catégories d'âge (U20, etc).")

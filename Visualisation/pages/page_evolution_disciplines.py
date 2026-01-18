@@ -1,69 +1,75 @@
+# Fichier : 4_📈_Évolution_Disciplines.py (Version adaptée aux données existantes)
+
 import streamlit as st
 import pandas as pd
 from pymongo import MongoClient
 import plotly.express as px
 
-# --- CONFIGURATION ---
+# --- CONFIGURATION DE LA PAGE ---
 st.set_page_config(layout="wide")
 
+# --- CONNEXION À MONGODB ---
 @st.cache_resource
 def init_connection():
-    client = MongoClient("mongodb://localhost:27017/")
+    # ... (coller votre fonction de connexion ici) ...
+    client = MongoClient("mongodb://localhost:27017/", serverSelectionTimeoutMS=5000)
+    client.server_info()
     return client
-
 client = init_connection()
+if not client: st.stop()
 db = client.athle_db
 
-# --- FONCTION CORRIGÉE ---
+
+# --- FONCTION DE RÉCUPÉRATION (SIMPLIFIÉE) ---
 @st.cache_data
-def get_clean_discipline_evolution():
-    # Agrégation pour éviter les erreurs de comptage
+def get_discipline_evolution_by_gender_olympics_only():
+    """
+    Calcule le nombre de disciplines UNIQUEMENT pour les JO,
+    séparées par sexe.
+    """
     pipeline = [
-        {
-            "$project": {
-                "year": {"$toInt": "$year"},
-                "competition": 1,
-                "count_disciplines": {"$toInt": "$count_disciplines"}
-            }
-        },
-        {"$sort": {"year": 1}}
+        # La jointure reste nécessaire pour obtenir le sexe
+        {"$lookup": {"from": "athletes", "localField": "athlete_id", "foreignField": "_id", "as": "athlete_info"}},
+        {"$unwind": "$athlete_info"},
+        # On peut retirer le groupement par compétition car il n'y en a qu'une
+        {"$group": {"_id": {"year": "$year", "sex": "$athlete_info.sex", "event": "$event"}}},
+        {"$group": {"_id": {"year": "$_id.year", "sex": "$_id.sex"}, "count_disciplines": {"$sum": 1}}},
+        {"$project": {"_id": 0, "Année": "$_id.year", "Sexe": "$_id.sex", "Nombre de Disciplines": "$count_disciplines"}},
+        {"$sort": {"Année": 1}}
     ]
-    data = list(db.editions.aggregate(pipeline))
-    return pd.DataFrame(data)
-
-st.title("📈 Analyse de l'Évolution des Disciplines")
-
-df = get_clean_discipline_evolution()
-
-if not df.empty:
-    # FILTRE : Permettre à l'utilisateur de choisir la compétition pour éviter les cumuls faux
-    competitions = ["Toutes"] + sorted(df['competition'].unique().tolist())
-    selected_comp = st.selectbox("Filtrer par type de compétition :", competitions)
     
-    df_plot = df if selected_comp == "Toutes" else df[df['competition'] == selected_comp]
+    data = list(db.results.aggregate(pipeline))
+    if not data: return pd.DataFrame()
 
-    # --- VISUALISATION PLUS MODERNE (Area Chart) ---
-    fig = px.area(
-        df_plot,
-        x="year",
-        y="count_disciplines",
-        color="competition",
-        line_group="competition",
-        title="Croissance du programme d'athlétisme",
-        labels={"count_disciplines": "Nb Disciplines", "year": "Année"},
-        template="plotly_dark",
-        markers=True
+    df = pd.DataFrame(data)
+    df = df[df['Sexe'].isin(['Male', 'Female'])]
+    # On renomme 'Male'/'Female' pour une légende plus jolie
+    df['Sexe'] = df['Sexe'].replace({'Male': 'Épreuves Hommes', 'Female': 'Épreuves Femmes'})
+    return df
+
+# --- INTERFACE UTILISATEUR (UI) ---
+st.title("📈 Évolution Historique des Disciplines Olympiques")
+st.markdown("Ce graphique illustre l'évolution du nombre d'épreuves d'athlétisme aux Jeux Olympiques, montrant la progression vers la parité entre les épreuves masculines et féminines.")
+
+df_evolution = get_discipline_evolution_by_gender_olympics_only()
+
+if not df_evolution.empty:
+    fig = px.line(
+        df_evolution,
+        x="Année",
+        y="Nombre de Disciplines",
+        color="Sexe", # La couleur est maintenant directement basée sur le sexe
+        markers=True,
+        title="Nombre d'épreuves d'athlétisme aux JO par édition"
     )
-
-    fig.update_layout(hovermode="x unified")
+    fig.update_layout(
+        xaxis_title="Année de l'édition",
+        yaxis_title="Nombre d'épreuves",
+        legend_title_text='Catégorie'
+    )
     st.plotly_chart(fig, use_container_width=True)
 
-    # --- ANALYSE DES CHIFFRES ---
-    col1, col2 = st.columns(2)
-    with col1:
-        latest_year = df_plot['year'].max()
-        latest_count = df_plot[df_plot['year'] == latest_year]['count_disciplines'].sum()
-        st.metric(f"Total Disciplines en {latest_year}", int(latest_count))
-    
-    with col2:
-        st.info("💡 Si le chiffre paraît élevé, vérifiez si votre base ne compte pas séparément les épreuves paralympiques ou les catégories d'âge (U20, etc).")
+    with st.expander("Voir les données détaillées"):
+        st.dataframe(df_evolution, use_container_width=True, hide_index=True)
+else:
+    st.warning("Impossible de charger les données d'évolution des disciplines.")

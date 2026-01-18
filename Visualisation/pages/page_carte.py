@@ -1,8 +1,9 @@
+# Fichier : 3_🌍_Carte_du_Monde.py
+
 import streamlit as st
 import pandas as pd
 from pymongo import MongoClient
 import plotly.express as px
-import pycountry
 
 # --- CONFIGURATION DE LA PAGE ---
 st.set_page_config(layout="wide")
@@ -19,105 +20,124 @@ def init_connection():
         return None
 
 client = init_connection()
-if not client:
-    st.stop()
-# --- Utilisation du nom de base de données correct ---
+if not client: st.stop()
 db = client.athle_db
 
-# --- FONCTIONS DE TRAITEMENT DES DONNÉES ---
-
-# Dictionnaire pour les codes NOC non standards ou ambigus
-# C'est un point clé pour que la carte fonctionne bien.
-NOC_TO_ISO3_MANUAL_MAPPING = {
-    'GDR': 'DEU',  # Allemagne de l'Est -> Allemagne
-    'FRG': 'DEU',  # Allemagne de l'Ouest -> Allemagne
-    'URS': 'RUS',  # Union Soviétique -> Russie
-    'EUN': 'RUS',  # Équipe Unifiée -> Russie
-    'TCH': 'CZE',  # Tchécoslovaquie -> République Tchèque
-    'YUG': 'SRB',  # Yougoslavie -> Serbie
-    'SGP': 'SGP',  # Singapour (parfois mal interprété)
-    'PUR': 'PRI',  # Porto Rico
-    'KOR': 'KOR',  # Corée du Sud
-    'IRI': 'IRN',  # Iran
-    'VIE': 'VNM',  # Vietnam
-    'TRI': 'TTO',  # Trinité et Tobago (TRI est l'ancien code, TTO est l'actuel)
+# --- DICTIONNAIRE DE MAPPING COMPLET (basé sur votre analyse) ---
+# Ce dictionnaire est la source de vérité pour la conversion des codes pays.
+NOC_TO_ISO3 = {
+    'AFG': 'AFG', 'AHO': 'ANT', 'ALB': 'ALB', 'ALG': 'DZA', 'AND': 'AND', 'ANG': 'AGO',
+    'ANT': 'ATG', 'ANZ': 'AUS', 'ARG': 'ARG', 'ARM': 'ARM', 'ARU': 'ABW', 'ASA': 'ASM',
+    'AUS': 'AUS', 'AUT': 'AUT', 'AZE': 'AZE', 'BAH': 'BHS', 'BAN': 'BGD', 'BAR': 'BRB',
+    'BDI': 'BDI', 'BEL': 'BEL', 'BEN': 'BEN', 'BER': 'BMU', 'BHU': 'BTN', 'BIH': 'BIH',
+    'BIZ': 'BLZ', 'BLR': 'BLR', 'BOH': 'CZE', 'BOL': 'BOL', 'BOT': 'BWA', 'BRA': 'BRA',
+    'BRN': 'BHR', 'BRU': 'BRN', 'BUL': 'BGR', 'BUR': 'BFA', 'CAF': 'CAF', 'CAM': 'KHM',
+    'CAN': 'CAN', 'CAY': 'CYM', 'CGO': 'COG', 'CHA': 'TCD', 'CHI': 'CHL', 'CHN': 'CHN',
+    'CIV': 'CIV', 'CMR': 'CMR', 'COD': 'COD', 'COK': 'COK', 'COL': 'COL', 'COM': 'COM',
+    'CPV': 'CPV', 'CRC': 'CRI', 'CRO': 'HRV', 'CUB': 'CUB', 'CYP': 'CYP', 'CZE': 'CZE',
+    'DEN': 'DNK', 'DJI': 'DJI', 'DMA': 'DMA', 'DOM': 'DOM', 'ECU': 'ECU', 'EGY': 'EGY',
+    'ERI': 'ERI', 'ESA': 'SLV', 'ESP': 'ESP', 'EST': 'EST', 'ETH': 'ETH', 'EUN': 'RUS',
+    'FIJ': 'FJI', 'FIN': 'FIN', 'FRA': 'FRA', 'FRG': 'DEU', 'FSM': 'FSM', 'GAB': 'GAB',
+    'GAM': 'GMB', 'GBR': 'GBR', 'GBS': 'GNB', 'GDR': 'DEU', 'GEO': 'GEO', 'GEQ': 'GNQ',
+    'GER': 'DEU', 'GHA': 'GHA', 'GRE': 'GRC', 'GRN': 'GRD', 'GUA': 'GTM', 'GUI': 'GIN',
+    'GUM': 'GUM', 'GUY': 'GUY', 'HAI': 'HTI', 'HKG': 'HKG', 'HON': 'HND', 'HUN': 'HUN',
+    'INA': 'IDN', 'IND': 'IND', 'IOA': 'IND', 'IRI': 'IRN', 'IRL': 'IRL', 'IRQ': 'IRQ',
+    'ISL': 'ISL', 'ISR': 'ISR', 'ISV': 'VIR', 'ITA': 'ITA', 'IVB': 'VGB', 'JAM': 'JAM',
+    'JOR': 'JOR', 'JPN': 'JPN', 'KAZ': 'KAZ', 'KEN': 'KEN', 'KGZ': 'KGZ', 'KIR': 'KIR',
+    'KOR': 'KOR', 'KOS': 'XKX', 'KSA': 'SAU', 'KUW': 'KWT', 'LAO': 'LAO', 'LAT': 'LVA',
+    'LBA': 'LBY', 'LBN': 'LBN', 'LBR': 'LBR', 'LCA': 'LCA', 'LES': 'LSO', 'LIE': 'LIE',
+    'LTU': 'LTU', 'LUX': 'LUX', 'MAD': 'MDG', 'MAR': 'MAR', 'MAS': 'MYS', 'MAW': 'MWI',
+    'MDA': 'MDA', 'MDV': 'MDV', 'MEX': 'MEX', 'MGL': 'MNG', 'MHL': 'MHL', 'MKD': 'MKD',
+    'MLI': 'MLI', 'MLT': 'MLT', 'MNE': 'MNE', 'MON': 'MCO', 'MOZ': 'MOZ', 'MRI': 'MUS',
+    'MTN': 'MRT', 'MYA': 'MMR', 'NAM': 'NAM', 'NCA': 'NIC', 'NED': 'NLD', 'NEP': 'NPL',
+    'NGR': 'NGA', 'NIG': 'NER', 'NOR': 'NOR', 'NRU': 'NRU', 'NZL': 'NZL', 'OMA': 'OMN',
+    'PAK': 'PAK', 'PAN': 'PAN', 'PAR': 'PRY', 'PER': 'PER', 'PHI': 'PHL', 'PLE': 'PSE',
+    'PLW': 'PLW', 'PNG': 'PNG', 'POL': 'POL', 'POR': 'PRT', 'PRK': 'PRK', 'PUR': 'PRI',
+    'QAT': 'QAT', 'ROC': 'TWN', 'ROU': 'ROU', 'RSA': 'ZAF', 'RUS': 'RUS', 'RWA': 'RWA',
+    'SAM': 'WSM', 'SCG': 'SRB', 'SEN': 'SEN', 'SEY': 'SYC', 'SGP': 'SGP', 'SIN': 'SGP',
+    'SKN': 'KNA', 'SLE': 'SLE', 'SLO': 'SVN', 'SMR': 'SMR', 'SOL': 'SLB', 'SOM': 'SOM',
+    'SRB': 'SRB', 'SRI': 'LKA', 'SSD': 'SSD', 'STP': 'STP', 'SUD': 'SDN', 'SUI': 'CHE',
+    'SUR': 'SUR', 'SVK': 'SVK', 'SWE': 'SWE', 'SWZ': 'SWZ', 'SYR': 'SYR', 'TAN': 'TZA',
+    'TCH': 'CZE', 'TGA': 'TON', 'THA': 'THA', 'TJK': 'TJK', 'TKM': 'TKM', 'TLS': 'TLS',
+    'TOG': 'TGO', 'TPE': 'TWN', 'TRI': 'TTO', 'TTO': 'TTO', 'TUN': 'TUN', 'TUR': 'TUR',
+    'TUV': 'TUV', 'UAE': 'ARE', 'UAR': 'EGY', 'UGA': 'UGA', 'UKR': 'UKR', 'URS': 'RUS',
+    'URU': 'URY', 'USA': 'USA', 'UZB': 'UZB', 'VAN': 'VUT', 'VEN': 'VEN', 'VIE': 'VNM',
+    'VIN': 'VCT', 'WIF': 'VGB', 'YEM': 'YEM', 'YUG': 'SRB', 'ZAM': 'ZMB', 'ZIM': 'ZWE'
 }
-
 
 @st.cache_data
 def get_iso_code(noc_code):
-    """
-    Tente de convertir un code NOC en code ISO-3.
-    Utilise un dictionnaire de mapping manuel pour les cas difficiles.
-    """
-    if noc_code in NOC_TO_ISO3_MANUAL_MAPPING:
-        return NOC_TO_ISO3_MANUAL_MAPPING[noc_code]
-    try:
-        # Recherche par code à 3 lettres
-        country = pycountry.countries.get(alpha_3=noc_code)
-        if country:
-            return country.alpha_3
-        # Si ça échoue, recherche par code à 2 lettres (si le NOC en est un)
-        country = pycountry.countries.get(alpha_2=noc_code)
-        if country:
-            return country.alpha_3
-    except Exception:
-        return None # Retourne None si aucune correspondance n'est trouvée
-    return None
+    """Convertit un code NOC en code ISO-3 à partir du dictionnaire interne."""
+    return NOC_TO_ISO3.get(noc_code)
 
 @st.cache_data
 def get_medals_by_country_for_map():
-    """
-    Récupère le nombre total de médailles par pays depuis MongoDB.
-    """
+    """Récupère le décompte de chaque type de médaille par pays."""
     pipeline = [
         {"$match": {"medal": {"$in": ["Gold", "Silver", "Bronze"]}}},
-        {"$group": {"_id": "$noc", "total_medailles": {"$sum": 1}}},
-        {"$project": {"_id": 0, "Pays (NOC)": "$_id", "Médailles": "$total_medailles"}}
+        {
+            "$group": {
+                "_id": "$noc",
+                "Or": {"$sum": {"$cond": [{"$eq": ["$medal", "Gold"]}, 1, 0]}},
+                "Argent": {"$sum": {"$cond": [{"$eq": ["$medal", "Silver"]}, 1, 0]}},
+                "Bronze": {"$sum": {"$cond": [{"$eq": ["$medal", "Bronze"]}, 1, 0]}},
+            }
+        },
+        {"$addFields": {"Total": {"$add": ["$Or", "$Argent", "$Bronze"]}}},
+        {"$project": {"_id": 0, "Pays (NOC)": "$_id", "Or": 1, "Argent": 1, "Bronze": 1, "Total": 1}}
     ]
     data = list(db.results.aggregate(pipeline))
-    if not data:
-        return pd.DataFrame()
+    if not data: return pd.DataFrame()
     
     df = pd.DataFrame(data)
-    # Applique la conversion de code pour chaque pays
     df['Code ISO-3'] = df['Pays (NOC)'].apply(get_iso_code)
-    
-    # Supprime les lignes où la conversion a échoué pour ne pas casser la carte
+    # On supprime les lignes pour lesquelles le mapping a échoué (s'il y en a)
     df.dropna(subset=['Code ISO-3'], inplace=True)
-    
     return df
 
+
 # --- INTERFACE UTILISATEUR (UI) ---
-
 st.title("🌍 Carte du Monde des Médailles")
-st.markdown("Répartition géographique de toutes les médailles (Or, Argent, Bronze) remportées dans les compétitions étudiées.")
+st.markdown("Explorez la répartition géographique des médailles en athlétisme. Utilisez les options ci-dessous pour filtrer par type de médaille.")
 
-# Chargement des données
 df_map = get_medals_by_country_for_map()
 
 if not df_map.empty:
-    # Création de la carte avec Plotly Express
+    st.sidebar.header("Options de la Carte")
+    medal_type_to_display = st.sidebar.selectbox(
+        "Choisissez le type de médailles à afficher :",
+        ["Total", "Or", "Argent", "Bronze"]
+    )
+
+    color_scales = {
+        "Total": px.colors.sequential.Plasma,
+        "Or": px.colors.sequential.Oranges,
+        "Argent": px.colors.sequential.Greys,
+        "Bronze": px.colors.sequential.amp
+    }
+    
     fig = px.choropleth(
         df_map,
-        locations="Code ISO-3",          # Nom de la colonne avec les codes ISO-3
-        color="Médailles",               # La valeur qui détermine la couleur
-        hover_name="Pays (NOC)",         # Ce qui s'affiche au survol
-        color_continuous_scale=px.colors.sequential.Plasma, # Palette de couleurs
-        projection="natural earth",      # Type de projection de la carte
-        title="Nombre total de médailles par pays"
+        locations="Code ISO-3",
+        color=medal_type_to_display,
+        hover_name="Pays (NOC)",
+        hover_data={"Or": True, "Argent": True, "Bronze": True, "Total": True, "Code ISO-3": False},
+        color_continuous_scale=color_scales[medal_type_to_display],
+        projection="natural earth",
+        title=f"Nombre de Médailles d'{'e Total' if medal_type_to_display == 'Total' else medal_type_to_display}"
     )
-    
-    # Amélioration de l'apparence de la carte
+
     fig.update_layout(
         margin={"r":0, "t":40, "l":0, "b":0},
         coloraxis_colorbar_title_text='Nombre de<br>Médailles'
     )
-
     st.plotly_chart(fig, use_container_width=True)
 
-    # Afficher le tableau de données en dessous pour consultation
-    with st.expander("Voir les données du tableau"):
-        st.dataframe(df_map.sort_values("Médailles", ascending=False), use_container_width=True)
+    with st.expander("Voir le tableau de données complet"):
+        st.dataframe(
+            df_map.sort_values(medal_type_to_display, ascending=False),
+            use_container_width=True, hide_index=True
+        )
+
 else:
     st.warning("Aucune donnée de médaille n'a pu être chargée pour la carte.")

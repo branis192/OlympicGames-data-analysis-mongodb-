@@ -1,0 +1,135 @@
+[
+    {
+        "meeting_name":"World Athletics Championships, Budapest 2023 ",
+        "venue":"Budapest ",
+        "country":"HUNGARY HUN ",
+        "date":"19 AUG 2023 - 27 AUG 2023",
+        "year":2023
+    },
+    {
+        "meeting_name":"World Athletics Championships, Oregon 2022 ",
+        "venue":"Oregon ",
+        "country":"UNITED STATES USA ",
+        "date":"15 JUL 2022 - 24 JUL 2022",
+        "year":2022
+    },
+    {
+        "meeting_name":"IAAF World Athletics Championships, DOHA 2019 ",
+        "venue":"Doha ",
+        "country":"QATAR QAT ",
+        "date":"27 SEP 2019 - 06 OCT 2019",
+        "year":2021
+    },
+    {
+        "meeting_name":"IAAF World Championships London 2017 ",
+        "venue":"London (Olympic Stadium) ",
+        "country":"GREAT BRITAIN & N.I. GBR ",
+        "date":"04 AUG 2017 - 13 AUG 2017",
+        "year":2020
+    },
+    {
+        "meeting_name":"15th IAAF World Championships ",
+        "venue":"Beijing (National Stadium) ",
+        "country":"PR OF CHINA CHN ",
+        "date":"22 AUG 2015 - 30 AUG 2015",
+        "year":2019
+    },
+    {
+        "meeting_name":"14th IAAF World Championships ",
+        "venue":"Moskva (Luzhniki) ",
+        "country":"RUSSIA RUS ",
+        "date":"10 AUG 2013 - 18 AUG 2013",
+        "year":2018
+    },
+    {
+        "meeting_name":"13th IAAF World Championships in Athletics ",
+        "venue":"Daegu (DS) ",
+        "country":"KOREA KOR ",
+        "date":"27 AUG 2011 - 04 SEP 2011",
+        "year":2017
+    },
+    {
+        "meeting_name":"12th IAAF World Championships in Athletics ",
+        "venue":"Berlin (Olympiastadion) ",
+        "country":"GERMANY GER ",
+        "date":"15 AUG 2009 - 23 AUG 2009",
+        "year":2016
+    },
+    {
+        "meeting_name":"11th IAAF World Championships in Athletics ",
+        "venue":"Osaka (Nagai Stadium) ",
+        "country":"JAPAN JPN ",
+        "date":"25 AUG 2007 - 02 SEP 2007",
+        "year":2015
+    },
+    {
+        "meeting_name":"10th IAAF World Championships in Athletics ",
+        "venue":"Helsinki (Olympic Stadium) ",
+        "country":"FINLAND FIN ",
+        "date":"06 AUG 2005 - 14 AUG 2005",
+        "year":2014
+    },
+    {
+        "meeting_name":"9th IAAF World Championships in Athletics ",
+        "venue":"Paris Saint-Denis (Stade de France) ",
+        "country":"FRANCE FRA ",
+        "date":"23 AUG 2003 - 31 AUG 2003",
+        "year":2013
+    },
+    {
+        "meeting_name":"8th IAAF World Championships ",
+        "venue":"Edmonton (Commonwealth Stadium) ",
+        "country":"CANADA CAN ",
+        "date":"03 AUG 2001 - 12 AUG 2001",
+        "year":2012
+    },
+    {
+        "meeting_name":"7th IAAF World Championships in Athletics ",
+        "venue":"Sevilla (La Cartuja) ",
+        "country":"SPAIN ESP ",
+        "date":"21 AUG 1999 - 29 AUG 1999",
+        "year":2011
+    },
+    {
+        "meeting_name":"6th IAAF World Championships In Athletics ",
+        "venue":"Athína (Olympic Stadium) ",
+        "country":"GREECE GRE ",
+        "date":"01 AUG 1997 - 10 AUG 1997",
+        "year":2010
+    },
+    {
+        "meeting_name":"5th IAAF World Championships in Athletics ",
+        "venue":"Göteborg (Ullevi Stadium) ",
+        "country":"SWEDEN SWE ",
+        "date":"05 AUG 1995 - 13 AUG 1995",
+        "year":2009
+    },
+    {
+        "meeting_name":"4th IAAF World Championships in Athletics ",
+        "venue":"Stuttgart (Gottlieb-Daimler Stadion) ",
+        "country":"GERMANY GER ",
+        "date":"13 AUG 1993 - 22 AUG 1993",
+        "year":2008
+    },
+    {
+        "meeting_name":"3rd IAAF World Championships in Athletics ",
+        "venue":"Tokyo (Olympic Stadium) ",
+        "country":"JAPAN JPN ",
+        "date":"23 AUG 1991 - 01 SEP 1991",
+        "year":2007
+    },
+    {
+        "meeting_name":"2nd IAAF World Championships in Athletics ",
+        "venue":"Roma (Stadio Olimpico) ",
+        "country":"ITALY ITA ",
+        "date":"28 AUG 1987 - 06 SEP 1987",
+        "year":2006
+    },
+    {
+        "meeting_name":"1st IAAF World Championships in Athletics ",
+        "venue":"Helsinki (Olympic Stadium) ",
+        "country":"FINLAND FIN ",
+        "date":"07 AUG 1983 - 14 AUG 1983 ",
+        "year":2005
+    }
+]

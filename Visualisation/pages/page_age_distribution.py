@@ -85,7 +85,55 @@ def get_discipline_list_for_filter():
     """Récupère la liste des disciplines pour le filtre."""
     disciplines = db.events.distinct("event_name")
     return ["Toutes"] + sorted(disciplines)
+@st.cache_data
+def get_world_medalist_ages(discipline_filter=None):
+    # 1. Filtre de base rapide
+    query = {"position": {"$in": [1, 2, 3, "1", "2", "3"]}}
+    if discipline_filter and discipline_filter != "Toutes":
+        query["event"] = discipline_filter
 
+    pipeline = [
+        {"$match": query},
+        {"$limit": 5000}, # Sécurité pour éviter que Streamlit ne plante sur "Toutes"
+        {
+            "$lookup": {
+                "from": "championships_index",
+                "localField": "event_name",
+                "foreignField": "meeting_name",
+                "as": "meeting_info"
+            }
+        },
+        {"$unwind": "$meeting_info"},
+        {
+            "$lookup": {
+                "from": "athletes",
+                "localField": "athlete",
+                "foreignField": "name",
+                "as": "athlete_bio"
+            }
+        },
+        {"$unwind": "$athlete_bio"},
+        {
+            "$project": {
+                "year": "$meeting_info.year",
+                "born": "$athlete_bio.born",
+                "sex": "$athlete_bio.sex"
+            }
+        }
+    ]
+
+    results = list(db.world_results.aggregate(pipeline))
+    if not results:
+        return pd.DataFrame()
+
+    df = pd.DataFrame(results)
+    
+    # Nettoyage robuste des dates
+    df['born'] = pd.to_datetime(df['born'], errors='coerce')
+    df = df.dropna(subset=['born'])
+    
+    df['age'] = df['year'] - df['born'].dt.year
+    return df[(df['age'] >= 10) & (df['age'] <= 60)]
 # --- INTERFACE UTILISATEUR (UI) ---
 
 st.title("📊 Analyse de l'Âge des Médaillés")
@@ -142,3 +190,51 @@ if not df_ages.empty:
 
 else:
     st.warning("Aucune donnée disponible pour les filtres sélectionnés.")
+
+
+# --- SECTION CHAMPIONNATS DU MONDE ---
+st.divider()
+st.title("📊 Analyse de l'Âge aux Championnats du Monde")
+st.markdown("Comparaison de la maturité des athlètes lors des Mondiaux IAAF.")
+
+# Chargement des données mondiales
+df_ages_world = get_world_medalist_ages(selected_discipline)
+
+if not df_ages_world.empty:
+    # --- VISUALISATION : VIOLIN PLOT MONDE ---
+    fig_w = px.violin(
+        df_ages_world,
+        y="age",
+        x="sex",
+        color="sex",
+        box=True,
+        points="all",
+        hover_data=["year"],
+        title=f"Distribution Mondiaux : {selected_discipline}",
+        labels={"age": "Âge", "sex": "Sexe"},
+        color_discrete_map={'Male': '#2ecc71', 'Female': '#9b59b6'}, # Couleurs différentes pour différencier
+        template="plotly_dark"
+    )
+    
+    fig_w.update_layout(
+        xaxis_title="",
+        yaxis_title="Âge",
+        showlegend=False,
+        plot_bgcolor='rgba(0,0,0,0)',
+        paper_bgcolor='rgba(0,0,0,0)',
+    )
+    
+    st.plotly_chart(fig_w, use_container_width=True)
+
+    # --- STATISTIQUES MONDE ---
+    w1, w2, w3 = st.columns(3)
+    with w1:
+        st.metric("🌍 Âge Moyen (Mondiaux)", f"{df_ages_world['age'].mean():.1f} ans")
+    with w2:
+        mode_w = df_ages_world['age'].mode()[0]
+        st.metric("🎯 Pic de performance", f"{int(mode_w)} ans")
+    with w3:
+        st.metric("⚖️ Médiane (Mondiaux)", f"{df_ages_world['age'].median():.1f} ans")
+
+else:
+    st.info("ℹ️ Pas assez de données mondiales pour cette discipline.")

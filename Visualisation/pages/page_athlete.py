@@ -94,7 +94,7 @@ if athlete_names:
                 df_clean = df_results.dropna(subset=['pos']).sort_values('year')
 
                 # --- VISUALISATION 1 : METRIC CLASSEMENT ---
-                st.subheader("📊 Performance Globale")
+                st.subheader("📊 Performance aux JO")
                 best_rank = int(df_clean['pos'].min()) if not df_clean.empty else "N/A"
                 st.system_note = f"Meilleure position enregistrée : {best_rank}"
                 st.metric("Meilleur Classement Mondial", f"Rang n°{best_rank}")
@@ -162,7 +162,7 @@ if world_results:
         w_bronze = len(df_world[df_world['position'] == 3])
         
         st.metric("Participations", total_world)
-        st.write(f"🥇 Titres : {w_gold}")
+        st.write(f"🥇 OR : {w_gold}")
         st.write(f"🥈 Argent : {w_silver}")
         st.write(f"🥉 Bronze : {w_bronze}")
 

@@ -78,6 +78,58 @@ def get_top_sports_by_gender(gender, individual_only=False):
     ]
     return pd.DataFrame(list(db.results.aggregate(pipeline)))
 
+@st.cache_data
+def get_world_gender_data_global():
+    """Répartition par sexe pour les podiums mondiaux."""
+    pipeline = [
+        {"$match": {"position": {"$in": [1, 2, 3, "1", "2", "3"]}}},
+        {
+            "$lookup": {
+                "from": "athletes",
+                "localField": "athlete",
+                "foreignField": "name",
+                "as": "athlete_info"
+            }
+        },
+        {"$unwind": "$athlete_info"},
+        {"$group": {"_id": "$athlete_info.sex", "count": {"$sum": 1}}},
+        {"$project": {"_id": 0, "Sexe": "$_id", "Nombre": "$count"}}
+    ]
+    return pd.DataFrame(list(db.world_results.aggregate(pipeline)))
+
+@st.cache_data
+def get_world_gender_evolution():
+    """Évolution par sexe aux Mondiaux (utilise championships_index pour l'année)."""
+    pipeline = [
+        {"$match": {"position": {"$in": [1, 2, 3, "1", "2", "3"]}}},
+        {
+            "$lookup": {
+                "from": "championships_index",
+                "localField": "event_name",
+                "foreignField": "meeting_name",
+                "as": "m_info"
+            }
+        },
+        {"$unwind": "$m_info"},
+        {
+            "$lookup": {
+                "from": "athletes",
+                "localField": "athlete",
+                "foreignField": "name",
+                "as": "a_info"
+            }
+        },
+        {"$unwind": "$a_info"},
+        {
+            "$group": {
+                "_id": {"year": "$m_info.year", "sex": "$a_info.sex"},
+                "count": {"$sum": 1}
+            }
+        },
+        {"$project": {"_id": 0, "Année": "$_id.year", "Sexe": "$_id.sex", "Podiums": "$count"}}
+    ]
+    df = pd.DataFrame(list(db.world_results.aggregate(pipeline)))
+    return df.sort_values("Année") if not df.empty else df
 # --- INTERFACE UTILISATEUR (UI) ---
 
 st.title("⚥ Analyse Comparative des Genres")

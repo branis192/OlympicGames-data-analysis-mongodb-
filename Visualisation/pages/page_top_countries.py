@@ -18,88 +18,103 @@ def init_connection():
         return None
 
 client = init_connection()
-if not client:
-    st.stop()
+if not client: st.stop()
 db = client.athle_db
 
-# --- FONCTION DE RÉCUPÉRATION DES DONNÉES ---
-@st.cache_data
-def get_top_10_countries():
+# --- FONCTION DE RÉCUPÉRATION DES DONNÉES AMÉLIORÉE ---
+@st.cache_data(ttl=3600)  # Cache pour 1 heure
+def get_top_10_countries(competition_filter="Toutes", sort_by="Total"):
     """
-    Récupère le top 10 des pays par nombre total de médailles.
+    Récupère le top 10 des pays avec un filtre par compétition
+    et un critère de tri (Total de médailles vs. médailles d'Or).
     """
+    # Étape 1 : Construire le filtre '$match' de base
+    match_filter = {"medal": {"$in": ["Gold", "Silver", "Bronze"]}}
+    
+    if competition_filter != "Toutes":
+        match_filter["competition"] = competition_filter
+        
+    # Étape 2 : Définir le critère de tri pour l'étape '$sort'
+    # Le classement officiel se fait par Or, puis Argent, puis Bronze.
+    if sort_by == "Or":
+        sort_criteria = {"Or": -1, "Argent": -1, "Bronze": -1}
+    else: # Tri par Total
+        sort_criteria = {"Total": -1}
+
     pipeline = [
-        # Étape 1 : Filtrer uniquement les résultats avec une médaille
-        {"$match": {"medal": {"$in": ["Gold", "Silver", "Bronze"]}}},
-        
-        # Étape 2 : Regrouper par code pays (noc) et compter les médailles
-        {"$group": {"_id": "$noc", "total_medailles": {"$sum": 1}}},
-        
-        # Étape 3 : Trier par le total des médailles en ordre décroissant
-        {"$sort": {"total_medailles": -1}},
-        
-        # Étape 4 : Garder uniquement les 10 premiers
+        {"$match": match_filter},
+        {
+            # Étape 3 : Grouper par pays et compter chaque type de médaille
+            "$group": {
+                "_id": "$noc",
+                "Or": {"$sum": {"$cond": [{"$eq": ["$medal", "Gold"]}, 1, 0]}},
+                "Argent": {"$sum": {"$cond": [{"$eq": ["$medal", "Silver"]}, 1, 0]}},
+                "Bronze": {"$sum": {"$cond": [{"$eq": ["$medal", "Bronze"]}, 1, 0]}},
+            }
+        },
+        # Étape 4 : Calculer le total
+        {"$addFields": {"Total": {"$add": ["$Or", "$Argent", "$Bronze"]}}},
+        # Étape 5 : Appliquer le tri
+        {"$sort": sort_criteria},
+        # Étape 6 : Garder les 10 premiers
         {"$limit": 10},
-        
-        # Étape 5 : Renommer les champs pour le DataFrame
-        {"$project": {"_id": 0, "Pays": "$_id", "Nombre de Médailles": "$total_medailles"}}
+        # Étape 7 : Mettre en forme pour le DataFrame
+        {"$project": {"_id": 0, "Pays": "$_id", "Or": 1, "Argent": 1, "Bronze": 1, "Total": 1}}
     ]
     
     data = list(db.results.aggregate(pipeline))
-    
-    if not data:
-        return pd.DataFrame()
-        
     return pd.DataFrame(data)
 
-
 # --- INTERFACE UTILISATEUR (UI) ---
+st.title("🏆 Top 10 des Nations de l'Athlétisme")
+st.markdown("Explorez le classement des pays les plus médaillés et changez les critères pour affiner l'analyse.")
 
-st.title("🏆 Top 10 des Nations les Plus Médaillées")
-st.markdown("Classement des pays en fonction du nombre total de médailles (Or, Argent et Bronze) remportées dans toutes les disciplines confondues.")
+# --- FILTRES DANS LA BARRE LATÉRALE ---
+st.sidebar.header("⚙️ Filtres du Top 10")
 
-# Chargement des données
-df_top_countries = get_top_10_countries()
+sort_by_option = st.sidebar.radio(
+    "Classer par :",
+    ("Classement Olympique (par Or)", "Total de Médailles"),
+    key="sort_top_countries"
+)
+sort_by_key = "Or" if sort_by_option == "Classement Olympique (par Or)" else "Total"
+
+# --- CHARGEMENT ET AFFICHAGE ---
+df_top_countries = get_top_10_countries(
+    competition_filter="Toutes",
+    sort_by=sort_by_key
+)
 
 if not df_top_countries.empty:
-    # Pour un graphique horizontal, il faut trier les données dans l'autre sens
-    # afin que la barre la plus haute soit en haut.
-    df_top_countries = df_top_countries.sort_values("Nombre de Médailles", ascending=True)
+    
+    # Afficher le graphique en premier
+    graph_sort_column = "Or" if sort_by_key == "Or" else "Total"
+    df_graph = df_top_countries.sort_values(by=graph_sort_column, ascending=True)
 
-    # Création du graphique en barres horizontales
+    x_label = "Nombre de Médailles d'Or" if sort_by_key == "Or" else "Nombre Total de Médailles"
+    
     fig = px.bar(
-        df_top_countries,
-        x="Nombre de Médailles",
+        df_graph,
+        x=graph_sort_column,
         y="Pays",
-        orientation='h', # C'est la clé pour un graphique horizontal
-        text="Nombre de Médailles", # Affiche le nombre sur les barres
-        labels={
-            "Pays": "Pays (Code NOC)",
-            "Nombre de Médailles": "Nombre Total de Médailles"
-        },
-        title="Top 10 des Pays par Total de Médailles"
-    )
-
-    # Amélioration du design
-    fig.update_traces(
-        textposition='outside',
-        marker_color='#FF914D' # Une couleur orange/or
-    )
-    fig.update_layout(
-        yaxis={'categoryorder': 'total ascending'}, # Assure le bon ordre
-        xaxis_title="Total de Médailles",
-        yaxis_title="" # On enlève le titre de l'axe Y pour plus de clarté
+        orientation='h',
+        text=graph_sort_column,
+        title=f"Top 10 des Pays (Classement : {sort_by_option})"
     )
     
+    fig.update_traces(textposition='outside', marker_color='#FFD700' if sort_by_key == "Or" else '#0087FF')
+    fig.update_layout(
+        xaxis_title=x_label,
+        yaxis_title="Pays (Code NOC)",
+        height=500
+    )
     st.plotly_chart(fig, use_container_width=True)
-
-    # Option pour afficher le tableau des données
-    with st.expander("Voir le classement détaillé"):
-        st.dataframe(
-            df_top_countries.sort_values("Nombre de Médailles", ascending=False),
-            use_container_width=True,
-            hide_index=True
-        )
-
+    
+    st.divider()
+    
+    # Afficher le tableau détaillé en bas
+    st.subheader("📊 Tableau détaillé des médailles")
+    display_df = df_top_countries[['Pays', 'Or', 'Argent', 'Bronze', 'Total']].copy()
+    st.dataframe(display_df, use_container_width=True, hide_index=True)
 else:
-    st.warning("Aucune donnée sur les médailles n'a pu être chargée.")
+    st.error("❌ Aucun pays ne correspond aux filtres sélectionnés. Vérifiez les données disponibles.")

@@ -9,6 +9,7 @@ st.set_page_config(layout="wide")
 # --- CONNEXION À MONGODB ---
 @st.cache_resource
 def init_connection():
+    # ... (coller votre fonction de connexion ici) ...
     try:
         client = MongoClient("mongodb://localhost:27017/", serverSelectionTimeoutMS=5000)
         client.server_info()
@@ -18,106 +19,125 @@ def init_connection():
         return None
 
 client = init_connection()
-if not client:
-    st.stop()
+if not client: st.stop()
 db = client.athle_db
 
-# --- FONCTION DE RÉCUPÉRATION DES DONNÉES ---
+# --- FONCTION DE RÉCUPÉRATION DES DONNÉES AMÉLIORÉE ---
 @st.cache_data
-def get_top_10_athletes():
+def get_top_10_athletes(sex_filter="Tous", country_filter="Tous", sort_by="Total"):
     """
-    Récupère le top 10 des athlètes les plus médaillés en utilisant
-    le champ pré-calculé 'total_medals' de la collection 'athletes'.
+    Récupère le top 10 des athlètes avec des filtres pour le sexe, le pays,
+    et le critère de tri (Total de médailles vs. médailles d'Or).
     """
+    # Étape 1 : Construire le filtre '$match' de base
+    match_filter = {"total_medals": {"$gt": 0}}
+    
+    if sex_filter != "Tous":
+        match_filter["sex"] = "Male" if sex_filter == "Hommes" else "Female"
+        
+    if country_filter != "Tous":
+        match_filter["country_origin"] = country_filter
+        
+    # Étape 2 : Construire le critère de tri '$sort'
+    if sort_by == "Or":
+        # Tri principal par Or, puis par Total en cas d'égalité
+        sort_criteria = {"medals_detail.gold": -1, "total_medals": -1}
+    else: # Par défaut, tri par Total
+        sort_criteria = {"total_medals": -1}
+    
     pipeline = [
-        # Étape 1 : S'assurer qu'on ne prend que les athlètes avec des médailles
-        {"$match": {"total_medals": {"$gt": 0}}},
-        
-        # Étape 2 : Trier par le total de médailles en ordre décroissant
-        {"$sort": {"total_medals": -1}},
-        
-        # Étape 3 : Garder uniquement les 10 premiers
+        {"$match": match_filter},
+        {"$sort": sort_criteria},
         {"$limit": 10},
-        
-        # Étape 4 : Projeter tous les champs nécessaires pour le tableau et le graphique
-        {
-            "$project": {
-                "_id": 0,
-                "Athlète": "$name",
-                "Pays": "$country_origin",
-                "Total": "$total_medals",
-                "Or": {"$ifNull": ["$medals_detail.gold", 0]},
-                "Argent": {"$ifNull": ["$medals_detail.silver", 0]},
-                "Bronze": {"$ifNull": ["$medals_detail.bronze", 0]}
-            }
-        }
+        {"$project": {
+            "_id": 0, "Athlète": "$name", "Pays": "$country_origin",
+            "Total": "$total_medals", "Or": {"$ifNull": ["$medals_detail.Gold", 0]},
+            "Argent": {"$ifNull": ["$medals_detail.Silver", 0]}, 
+            "Bronze": {"$ifNull": ["$medals_detail.Bronze", 0]}
+        }}
     ]
     
     data = list(db.athletes.aggregate(pipeline))
-    
-    if not data:
-        return pd.DataFrame()
-    
     df = pd.DataFrame(data)
     
-    # Ensure columns exist and have proper types
+    # Ensure numeric types
     for col in ['Or', 'Argent', 'Bronze', 'Total']:
-        if col not in df.columns:
-            df[col] = 0
-        df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).astype(int)
-        
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).astype(int)
+    
     return df
+
+@st.cache_data
+def get_all_countries_with_medals():
+    """Récupère la liste des pays pour le filtre."""
+    codes = db.athletes.distinct("country_origin", {"total_medals": {"$gt": 0}})
+    return ["Tous"] + sorted(codes)
 
 
 # --- INTERFACE UTILISATEUR (UI) ---
+st.title("🌟 Les Légendes de l'Athlétisme")
+st.markdown("Explorez le classement des plus grands athlètes en utilisant les filtres ci-dessous.")
 
-st.title("🌟 Top 10 des Légendes de l'Athlétisme")
-st.markdown("Classement des athlètes ayant remporté le plus de médailles, toutes compétitions confondues.")
+# --- FILTRES DANS LA BARRE LATÉRALE ---
+st.sidebar.header("Filtres du Top 10")
 
-# Chargement des données
-df_top_athletes = get_top_10_athletes()
+sort_by_option = st.sidebar.radio(
+    "Classer par :",
+    ("Total de Médailles", "Or"),
+    key="sort_top_athletes"
+)
+# Convertir le choix en clé pour la fonction
+sort_by_key = "Or" if sort_by_option == "Or" else "Total"
+
+sex_option = st.sidebar.radio(
+    "Filtrer par sexe :",
+    ("Tous", "Hommes", "Femmes"),
+    key="sex_top_athletes"
+)
+
+country_list = get_all_countries_with_medals()
+country_option = st.sidebar.selectbox(
+    "Filtrer par pays :",
+    country_list,
+    key="country_top_athletes"
+)
+
+
+# --- CHARGEMENT ET AFFICHAGE ---
+df_top_athletes = get_top_10_athletes(
+    sex_filter=sex_option,
+    country_filter=country_option,
+    sort_by=sort_by_key
+)
 
 if not df_top_athletes.empty:
-    # On ajoute le pays au nom de l'athlète pour plus de clarté dans le graphique
-    df_top_athletes['Athlète (Pays)'] = df_top_athletes['Athlète'] + " (" + df_top_athletes['Pays'] + ")"
+    # Colonne à utiliser pour l'axe X et le tri du graphique
+    sort_column_df = "Or" if sort_by_key == "Or" else "Total"
     
-    # On trie pour l'affichage horizontal
-    df_top_athletes_sorted = df_top_athletes.sort_values("Total", ascending=True)
+    df_top_athletes['Athlète (Pays)'] = df_top_athletes['Athlète'] + " (" + df_top_athletes['Pays'] + ")"
+    df_graph = df_top_athletes.sort_values(sort_column_df, ascending=True)
 
-    # Création du graphique en barres horizontales
     fig = px.bar(
-        df_top_athletes_sorted,
-        x="Total",
+        df_graph,
+        x=sort_column_df,
         y="Athlète (Pays)",
         orientation='h',
-        text="Total",
-        title="Top 10 des Athlètes par Nombre Total de Médailles"
+        text=sort_column_df,
+        title=f"Top 10 des Athlètes classés par nombre de médailles d'{'Or' if sort_by_key == 'Or' else 'Total'}"
     )
 
-    # Amélioration du design
-    fig.update_traces(
-        textposition='outside',
-        marker_color='#F2BE22' # Une couleur dorée
-    )
+    fig.update_traces(textposition='outside', marker_color='#F2BE22')
     fig.update_layout(
-        xaxis_title="Nombre Total de Médailles",
-        yaxis_title="Athlète",
-        height=600 # Un peu plus haut pour laisser de la place aux noms
+        xaxis_title=f"Nombre de médailles d'{'Or' if sort_by_key == 'Or' else 'Total'}",
+        yaxis_title="Athlète", height=600
     )
-    
     st.plotly_chart(fig, use_container_width=True)
-
-    # Afficher le tableau de données avec le détail des médailles
-    with st.expander("Voir le classement détaillé avec la répartition Or/Argent/Bronze"):
-        # Ensure all required columns exist
-        cols_to_display = ['Athlète', 'Pays', 'Or', 'Argent', 'Bronze', 'Total']
-        display_df = df_top_athletes[[col for col in cols_to_display if col in df_top_athletes.columns]]
-        
+    
+    with st.expander("Voir le classement détaillé"):
         st.dataframe(
-            display_df,
-            use_container_width=True,
-            hide_index=True
+            df_top_athletes[['Athlète', 'Pays', 'Or', 'Argent', 'Bronze', 'Total']],
+            use_container_width=True, hide_index=True
         )
 
 else:
-    st.warning("Aucune donnée sur les athlètes les plus médaillés n'a pu être chargée.")
+    st.warning("Aucun athlète ne correspond aux filtres sélectionnés.")
